@@ -1,0 +1,4 @@
+set_openservice_key.bat
+venv/
+__pycache__/
+*.pyc

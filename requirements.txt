@@ -1,0 +1,15 @@
+# Biblioteke za Projekat br. 1a (NBP/BP 2026)
+# Instalacija:  python -m pip install -r requirements.txt
+
+# Simulacija i prikaz mape
+numpy
+matplotlib
+contextily>=1.7
+geopy
+openrouteservice
+
+# Prostorni / prostorno-vremenski indeksi (svako koristi svoju varijantu)
+rtree          # R-Tree u Python-u
+duckdb         # DuckDB; spatial proširenje se učitava iz DuckDB-a: INSTALL spatial; LOAD spatial;
+h3>=4          # H3 (verzija 4: latlng_to_cell, grid_disk ...)
+pygeohash      # GeoHash
