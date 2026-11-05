@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 import h3
 import math
+import bisect
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -222,6 +223,17 @@ def zadatak_2(lon, lat, k=3):
     # id: 1, status: vozi, lokacija: (lat 44.987654, lon 20.123456), udaljenost: 180 m
     # id: 12, status: stigao, lokacija: (lat 44.987654, lon 20.123456), udaljenost: 190 m
     
+def celije_pravougaonika(zapad, istok, sever, jug):
+    """H3 celije koje pokrivaju pravougaonik"""
+    ivica = h3.average_hexagon_edge_length(H3_REZOLUCIJA, unit="m")
+    margina = 1.5 * ivica
+    sred_lat = (jug + sever) / 2
+    dlat = margina / 111320
+    dlon = margina / (111320 * math.cos(math.radians(sred_lat)))
+    z, i = zapad - dlon, istok + dlon
+    j, s = jug - dlat, sever + dlat
+    poligon = h3.LatLngPoly([(j,z), (j,i), (s,i), (s,z)])
+    return h3.h3shape_to_cells(poligon, H3_REZOLUCIJA)
 
 def zadatak_3(zapad, jug, istok, sever, vreme_od, vreme_do):
     """Zadatak 3: koji dostavljači su bili u pravougaoniku
@@ -229,6 +241,34 @@ def zadatak_3(zapad, jug, istok, sever, vreme_od, vreme_do):
     
     print(f"Zadatak 3: Dostavljači koji su u poslednja {INTERVAL_MIN} minuta bili u rejonu: lon {zapad:.6f} – {istok:.6f}, lat {jug:.6f} – {sever:.6f}, "
           f"vreme {vreme_od:%H:%M:%S} – {vreme_do:%H:%M:%S}")
+
+    celije = celije_pravougaonika(zapad, istok, sever, jug)
+
+    poslednji = {}
+    pregledano = 0
+    for c in celije:
+        zapisi = istorija_celija.get(c)
+        if not zapisi:
+            continue
+        start = bisect.bisect_left(zapisi, vreme_od, key=lambda r: r["vreme"])
+        for idx in range(start, len(zapisi)):
+            r = zapisi[idx]
+            if r["vreme"] > vreme_do:
+                break
+            pregledano += 1
+            if zapad <= r["lon"] <= istok and jug <= r["lat"] <= sever:
+                if r["id"] not in poslednji or r["vreme"] > poslednji[r["id"]]["vreme"]:
+                    poslednji[r["id"]] = r
+
+    if not poslednji:
+        print("Nijedan dostavljac nije bio u oblasti")
+    for did in sorted(poslednji):
+        r = poslednji[did]
+        print(f"id: {r['id']}, status: {STATUS_PRIKAZ[r['status']]}, "
+              f"Lokacija: (lat {r['lat']:.6f}, lon {r['lon']:.6f}), vreme: {r['vreme']:%H:%M:%S}")
+
+    ukupno = sum(len(v) for v in istorija_celija.values())
+    print(f"(obuhvaceno {len(celije)} celija, pregledano {pregledano} zapisa od {ukupno} u istoriji)")
     
     # ovde ide pretraga dostavljača 
 
@@ -274,6 +314,7 @@ def azuriraj_lokacije_dostavljaca(pozicije_dostavljaca:list):
             celija_dostavljaca[did] = nova
 
         trenutne_pozicije[did] = p
+        istorija_celija.setdefault(nova, []).append(p)
 
 
 def inicijalizacija_indeksa(dostavljaci):
@@ -314,6 +355,7 @@ MAX_PRSTENOVA = 100
 indeks_celija = {}
 celija_dostavljaca = {}
 trenutne_pozicije = {}
+istorija_celija = {}
 
 OPISI_ZADATAKA = {
     1: f"Zadatak 1 – Dostavljači u krugu poluprečnika od {POLUPRECNIK_M} m oko tačke",
