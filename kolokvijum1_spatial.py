@@ -7,9 +7,9 @@ ORS klijent i pozadinska mapa).
 """
 from datetime import datetime, timedelta
 
-import h3
-import math
-import bisect
+import h3                   # H3 heksagonalni prostorni indeks
+import math                 # za Haversine formulu i zaokruživanje (ceil)
+import bisect               # binarna pretraga po vremenu (zadatak 3)
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -128,7 +128,7 @@ def pocetna_slika():
     return (markeri, sat, info, *brojevi)
 
 
-R_ZEMLJE_M = 6371000
+R_ZEMLJE_M = 6371000    # poluprecnik Zemlje u metrima
 STATUS_PRIKAZ = {"ceka": "čeka", "vozi": "vozi", "stigao": "stigao"}
 
 def haversine_m(lat1, lon1, lat2, lon2):
@@ -145,8 +145,9 @@ def zadatak_1(lon, lat, poluprecnik_m=200):
     
     print(f"Zadatak 1: Dostavljači u krugu od poluprečnika {poluprecnik_m} m od tačke: lat {lat:.6f}, lon {lon:.6f}, su:")
 
+    # Koliko prstenova celija oko tačke treba pogledati da pokrijemo ceo krug
     k = math.ceil(poluprecnik_m / h3.average_hexagon_edge_length(H3_REZOLUCIJA, unit="m"))
-    centar = h3.latlng_to_cell(lat, lon, H3_REZOLUCIJA)
+    centar = h3.latlng_to_cell(lat, lon, H3_REZOLUCIJA)     # celija u kojoj je tacka klika
 
     # Kandidati iz celija oko tacke klika
     kandidati = set()
@@ -160,7 +161,7 @@ def zadatak_1(lon, lat, poluprecnik_m=200):
         d = haversine_m(lat, lon, p["lat"], p["lon"])
         if d <= poluprecnik_m:
             nadjeni.append((d, p))
-    nadjeni.sort(key=lambda x: x[0])
+    nadjeni.sort(key=lambda x: x[0])        # najbliži prvi
 
     if not nadjeni:
         print("Nema dostavljaca u krugu")
@@ -187,9 +188,9 @@ def zadatak_2(lon, lat, k=3):
     ivica = h3.average_hexagon_edge_length(H3_REZOLUCIJA, unit="m")
     centar = h3.latlng_to_cell(lat, lon, H3_REZOLUCIJA)
 
-    nadjeni = []
+    nadjeni = []                    # (rastojanje, zapis) za sve dosad obidjene dostavljace
     provereno_celija = 0
-    r = 0
+    r = 0                           # r = broj prstena oko celije klika (0 = sama celija)
     while True:
         # obidji samo novi prsten r
         for c in h3.grid_ring(centar, r):
@@ -204,9 +205,9 @@ def zadatak_2(lon, lat, k=3):
         garantovano = (1.5 * r - 0.5) * ivica
 
         if len(nadjeni) >= k and nadjeni[k - 1][0] <= garantovano:
-            break
+            break           # k-ti najblizi je bliži od svih neobidjenih => rezultat je tacan
         if len(nadjeni) == len(trenutne_pozicije) or r >= MAX_PRSTENOVA:
-            break
+            break           # nema više koga da nađemo, ili sigurnosna granica
         r += 1
 
     for d, p in nadjeni[:k]:
@@ -226,6 +227,7 @@ def zadatak_2(lon, lat, k=3):
 def celije_pravougaonika(zapad, istok, sever, jug):
     """H3 celije koje pokrivaju pravougaonik"""
     ivica = h3.average_hexagon_edge_length(H3_REZOLUCIJA, unit="m")
+
     margina = 1.5 * ivica
     sred_lat = (jug + sever) / 2
     dlat = margina / 111320
@@ -242,14 +244,17 @@ def zadatak_3(zapad, jug, istok, sever, vreme_od, vreme_do):
     print(f"Zadatak 3: Dostavljači koji su u poslednja {INTERVAL_MIN} minuta bili u rejonu: lon {zapad:.6f} – {istok:.6f}, lat {jug:.6f} – {sever:.6f}, "
           f"vreme {vreme_od:%H:%M:%S} – {vreme_do:%H:%M:%S}")
 
+    # PROSTORNI DEO: pravougaonik pretvaramo u skup H3 celija
     celije = celije_pravougaonika(zapad, istok, sever, jug)
 
-    poslednji = {}
+    poslednji = {}       # id dostavljaca -> njegov NAJKASNIJI zapis u oblasti i intervalu
     pregledano = 0
     for c in celije:
         zapisi = istorija_celija.get(c)
         if not zapisi:
             continue
+
+        # VREMENSKI DEO:
         start = bisect.bisect_left(zapisi, vreme_od, key=lambda r: r["vreme"])
         for idx in range(start, len(zapisi)):
             r = zapisi[idx]
@@ -305,14 +310,16 @@ def azuriraj_lokacije_dostavljaca(pozicije_dostavljaca:list):
         nova = h3.latlng_to_cell(p["lat"], p["lon"], H3_REZOLUCIJA)
         stara = celija_dostavljaca.get(did)
 
+        # Indeks menjamo samo ako je dostavljac presao u drugu celiju
         if nova != stara:
             if stara is not None:
-                indeks_celija[stara].discard(did)
+                indeks_celija[stara].discard(did)   # izbaci iz stare celije
                 if not indeks_celija[stara]:
                     del indeks_celija[stara]
-            indeks_celija.setdefault(nova, set()).add(did)
+            indeks_celija.setdefault(nova, set()).add(did)  # ubaci u novu celiju
             celija_dostavljaca[did] = nova
 
+        # Tacna pozicija se osvezava uvek, jer iz nje racunamo rastojanja
         trenutne_pozicije[did] = p
         istorija_celija.setdefault(nova, []).append(p)
 
@@ -321,9 +328,13 @@ def inicijalizacija_indeksa(dostavljaci):
     """Ovde treba da se incijalizuje prostorni / prostorno-vremenski indeks 
     sa početnim pozicijama dostavljača (pre polaska)."""
 
+    """Poziva se jednom, pre simulacije: upisuje pocetne pozicije dostavljaca u indeks."""
     for d in dostavljaci:
         did = d["id"]
+        # Paznja: H3 prima (lat, lng), a ostatak koda koristi (lon, lat)
         celija = h3.latlng_to_cell(d["trenutni_lat"], d["trenutni_lon"], H3_REZOLUCIJA)
+
+        # setdefault pravi prazan skup ako celija jos nema nijednog dostavljaca
         indeks_celija.setdefault(celija, set()).add(did)
         celija_dostavljaca[did] = celija
         trenutne_pozicije[did] = {
@@ -349,12 +360,19 @@ KORAK_SIMULACIJE_S = 1          # simulirane sekunde po jednom frejmu
 POLUPRECNIK_M = 200      # Zadatak 1
 K_NAJBLIZIH = 3          # Zadatak 2
 INTERVAL_MIN = 2         # Zadatak 3
-H3_REZOLUCIJA = 9
-MAX_PRSTENOVA = 100
+H3_REZOLUCIJA = 9        # rezolucija 9: ivica celije ~174 m, priblizno poluprecniku upita (200 m)
+MAX_PRSTENOVA = 100      # sigurnosna granica za zadatak 2, da pretraga ne ide u beskonacnost
 
+# Sam prostorni indeks: H3 celija -> skup id-jeva dostavljaca koji su trenutno u njoj
 indeks_celija = {}
+
+# Pomocna mapa: id dostavljaca -> celija u kojoj ga indeks trenutno drži.
 celija_dostavljaca = {}
+
+# Tacne trenutne pozicije: id -> poslednji zapis (lon, lat, status).
 trenutne_pozicije = {}
+
+# Istorija za prostorno-vremenski upit (zadatak 3)
 istorija_celija = {}
 
 OPISI_ZADATAKA = {
